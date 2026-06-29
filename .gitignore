@@ -1,0 +1,22 @@
+#This file prevents Git from tracking large model files, virtual environment , or temporary macOS folders
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python environment
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Large binary files (MediaPipe ML model)
+*.task
+
+# IDE configuration
+.vscode/
+.idea/
