@@ -7,9 +7,9 @@ Instead of installing heavy packages that trigger macOS security alerts, the sys
 
 ---
 
-## 🚀 Supported Apps & Commands
+## Supported Apps & Commands
 
-| Media App | Play / Pause (Thumbs Up) | Skip Ahead (Right Swipe) | Skip Back (Left Swipe) | Volume Control (Pinch & Drag) |
+| Media App | Play / Pause (Palm) | Skip Ahead (Right Swipe) | Skip Back (Left Swipe) | Volume Control (Pinch & Drag) |
 | :--- | :--- | :--- | :--- | :--- |
 | **Spotify** | Toggle Play/Pause | Next Song | Previous Song | System Volume |
 | **Apple Music** | Toggle Play/Pause | Next Song | Previous Song | System Volume |
@@ -19,7 +19,7 @@ Instead of installing heavy packages that trigger macOS security alerts, the sys
 
 ---
 
-## 🧠 Engineering Challenges & How I Solved Them
+## Engineering Challenges & How I Solved Them
 
 ### 1. Eliminating Volume Jitter (Signal Smoothing)
 Webcam coordinates are naturally noisy due to light changes and camera resolution. If you map raw finger coordinates directly to your system volume, the audio level fluctuates rapidly (jitter). 
@@ -37,7 +37,7 @@ If you have both Spotify playing in the background and a YouTube video open in t
 
 ---
 
-## 🛠️ Quick Installation
+## Quick Installation
 
 ### 1. Run the Setup Script
 Clone the repository and run the setup script. It will automatically create your virtual environment and install dependencies:
