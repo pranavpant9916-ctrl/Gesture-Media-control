@@ -10,6 +10,7 @@ import media_controller as media
 import queue
 import threading
 
+# Connection lines for rendering the hand skeleton overlay
 CONNECTIONS = [
     (0,1),(1,2),(2,3),(3,4),
     (0,5),(5,6),(6,7),(7,8),
@@ -19,8 +20,11 @@ CONNECTIONS = [
     (0,17) 
 ]
 
-
 def command_worker(cmd_queue):
+    """
+    Background worker thread that pops commands from the queue
+    and executes them (preventing AppleScript from lagging the camera).
+    """
     while True:
         func, args = cmd_queue.get()
         if func is None:
@@ -29,6 +33,7 @@ def command_worker(cmd_queue):
         cmd_queue.task_done()
 
 def main():
+    # Load the hand landmark model
     base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
     options = vision.HandLandmarkerOptions(
         base_options=base_options,
@@ -37,6 +42,7 @@ def main():
     )
     detector = vision.HandLandmarker.create_from_options(options)
     
+    # State tracking variables
     volume_control_active = False
     start_y = 0.0
     start_volume = 50
@@ -44,11 +50,12 @@ def main():
     smoothed_volume = 50.0 
     
     x_history = deque(maxlen=15)
-    last_swipe_time = 0.0
-    last_toggle_time = 0.0
+    last_gesture_time = 0.0
     last_volume_time = 0.0 
     hud_message = ""
     hud_message_expiry = 0.0 
+    
+    # Initialize background worker thread
     cmd_queue = queue.Queue()
     worker_thread = threading.Thread(target=command_worker, args=(cmd_queue,), daemon=True)
     worker_thread.start()
@@ -75,6 +82,7 @@ def main():
         
         if result.hand_landmarks:
             for hand_landmarks, handedness in zip(result.hand_landmarks, result.handedness):
+                # Draw the skeleton connection lines
                 for start_idx, end_idx in CONNECTIONS:
                     start_pt = hand_landmarks[start_idx]
                     end_pt = hand_landmarks[end_idx]
@@ -82,85 +90,90 @@ def main():
                     end_pixel = (int(end_pt.x * w), int(end_pt.y * h))
                     cv2.line(frame, start_pixel, end_pixel, (255, 255, 0), 2)
                 
+                # Draw the joint points
                 for idx, landmark in enumerate(hand_landmarks):
                     pixel = (int(landmark.x * w), int(landmark.y * h))
                     if idx == 8:
-                        cv2.circle(frame, pixel, 8, (0, 0, 255), -1)
+                        cv2.circle(frame, pixel, 8, (0, 0, 255), -1) # Red tip
                     else:
-                        cv2.circle(frame, pixel, 5, (0, 255, 0), -1)
+                        cv2.circle(frame, pixel, 5, (0, 255, 0), -1) # Green joints
                 
                 hand_label = handedness[0].category_name
                 thumb_tip = hand_landmarks[4]
                 index_tip = hand_landmarks[8]
                 
-                x_history.append(index_tip.x)
-                swipe_event = None
-                
-                if current_time - last_swipe_time > 1.5:
-                   if len(x_history) == 15:
-                       displacement = x_history[-1] - x_history[0]
-                       if displacement > 0.25:
-                          swipe_event = "Swipe Right"
-                          last_swipe_time = current_time
-                          x_history.clear()
-                                                    
-                          cmd_queue.put((media.next_track, ()))
-                          hud_message = "⏭️ SKIP AHEAD"
-                          hud_message_expiry = current_time + 2.0
-                          
-                          print(f"[{hand_label} Hand] Skip Ahead triggered.")
-                          
-                       elif displacement < -0.25:
-                          swipe_event = "Swipe Left"
-                          last_swipe_time = current_time 
-                          x_history.clear()
-                          
-                          cmd_queue.put((media.previous_track, ()))
-                          hud_message = "⏮️ SKIP BACK"
-                          hud_message_expiry = current_time + 2.0
-                          
-                          print(f"[{hand_label} Hand] Skip Back triggered.")
-                
-                distance = calculate_distance(thumb_tip, index_tip)
-                
-                if distance < 0.05:
-                    if not volume_control_active:
-                        volume_control_active = True
-                        start_y = index_tip.y
-                        start_volume = current_volume
-                        print(f"[{hand_label} Hand] 🔒 Volume Locked! Start Y: {start_y:.2f} | Vol: {start_volume}%")
-                    else:
-                        delta_y = start_y - index_tip.y
-                        volume_change = (delta_y / 0.3) * 50
-                        target_volume = max(0, min(100, int(start_volume + volume_change)))
-                        
-                        alpha = 0.25
-                        smoothed_volume = (alpha * target_volume) + ((1 - alpha) * smoothed_volume)
-                        current_volume = round(smoothed_volume)
-                        if current_time - last_volume_time > 0.10:
-                            cmd_queue.put((media.set_system_volume, (current_volume,)))
-                            last_volume_time = current_time
-                        
-                        bar_length = 10
-                        filled_blocks = int(current_volume / 10)
-                        empty_blocks = bar_length - filled_blocks
-                        volume_bar = "🁢" * filled_blocks + "🀆" * empty_blocks
-                        print(f"[{hand_label} Hand] Volume Control | [{volume_bar}] {current_volume}%")
-                else:
-                    volume_control_active = False
+                # --- PHYSICAL LEFT HAND (Detected as "Right" in mirrored view) ---
+                if hand_label == "Right":
+                    distance = calculate_distance(thumb_tip, index_tip)
                     gesture = classify_gesture(hand_landmarks, hand_label)
                     
-                    if gesture == "Thumbs Up" and (current_time - last_toggle_time > 2.0):
-                        cmd_queue.put((media.toggle_play_pause, ()))
-                        last_toggle_time = current_time
-                        hud_message = "⏯️ PLAY / PAUSE"
-                        hud_message_expiry = current_time + 2.0
-                        print(f"[{hand_label} Hand] Play/Pause toggled.")
+                    if distance < 0.05 and gesture != "Closed":
+                        if not volume_control_active:
+                            volume_control_active = True
+                            start_y = index_tip.y
+                            start_volume = current_volume
+                            print(f"[Left Hand] 🔒 Volume Locked! Start Y: {start_y:.2f} | Vol: {start_volume}%")
+                        else:
+                            delta_y = start_y - index_tip.y
+                            volume_change = (delta_y / 0.3) * 50
+                            target_volume = max(0, min(100, int(start_volume + volume_change)))
+                            
+                            alpha = 0.25
+                            smoothed_volume = (alpha * target_volume) + ((1 - alpha) * smoothed_volume)
+                            current_volume = round(smoothed_volume)
+                            if current_time - last_volume_time > 0.10:
+                                cmd_queue.put((media.set_system_volume, (current_volume,)))
+                                last_volume_time = current_time
+                            
+                            bar_length = 10
+                            filled_blocks = int(current_volume / 10)
+                            empty_blocks = bar_length - filled_blocks
+                            volume_bar = "🁢" * filled_blocks + "🀆" * empty_blocks
+                            print(f"[Left Hand] Volume Control | [{volume_bar}] {current_volume}%")
+                    else:
+                        volume_control_active = False
+
+                # --- PHYSICAL RIGHT HAND (Detected as "Left" in mirrored view) ---
+                elif hand_label == "Left":
+                    volume_control_active = False
+                    x_history.append(index_tip.x)
+                    
+                    # 1. Swipes
+                    if current_time - last_gesture_time > 1.5:
+                        if len(x_history) == 15:
+                            displacement = x_history[-1] - x_history[0]
+                            if displacement > 0.25:
+                                last_gesture_time = current_time
+                                x_history.clear()
+                                cmd_queue.put((media.next_track, ()))
+                                hud_message = "SKIP AHEAD"
+                                hud_message_expiry = current_time + 2.0
+                                print("[Right Hand] Skip Ahead triggered.")
+                               
+                            elif displacement < -0.25:
+                                last_gesture_time = current_time 
+                                x_history.clear()
+                                cmd_queue.put((media.previous_track, ()))
+                                hud_message = "SKIP BACK"
+                                hud_message_expiry = current_time + 2.0
+                                print("[Right Hand] Skip Back triggered.")
+                    
+                    # 2. Open Palm Play/Pause
+                    gesture = classify_gesture(hand_landmarks, hand_label)
+                    if current_time - last_gesture_time > 1.5:
+                        if gesture == "Open Palm":
+                            cmd_queue.put((media.toggle_play_pause, ()))
+                            last_gesture_time = current_time
+                            hud_message = "PLAY / PAUSE"
+                            hud_message_expiry = current_time + 2.0
+                            print("[Right Hand] Play/Pause toggled.")
             
         else:
+            # Clear data when hand exits the frame
             x_history.clear()
             volume_control_active = False
            
+        # Draw Volume Locking Bar OSD
         if volume_control_active:
             cv2.rectangle(frame, (30, 150), (60, 350), (100, 100, 100), 2)
             filled_height = int(current_volume * 2)
@@ -168,6 +181,7 @@ def main():
             cv2.putText(frame, f"Vol: {current_volume}%", (20, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             cv2.putText(frame, "[LOCKED]", (20, 380), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
+        # Draw Notification HUD
         if current_time < hud_message_expiry:
             overlay = frame.copy()
             cv2.rectangle(overlay, (w // 2 - 140, h - 70), (w // 2 + 140, h - 30), (0, 0, 0), -1)
@@ -178,6 +192,7 @@ def main():
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
             
+    # Clean up resources
     cmd_queue.put((None, ()))
     detector.close()
     cap.release() 
