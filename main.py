@@ -1,14 +1,15 @@
-import cv2
-import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-from utils import calculate_distance
-from gesture_classifier import classify_gesture
-from collections import deque
-import time 
-import media_controller as media
 import queue
 import threading
+import time
+from collections import deque
+import cv2
+import mediapipe as mp
+import numpy as np
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import media_controller as media
+from gesture_classifier import classify_gesture
+from utils import calculate_distance
 
 # Connection lines for rendering the hand skeleton overlay
 CONNECTIONS = [
@@ -21,10 +22,6 @@ CONNECTIONS = [
 ]
 
 def command_worker(cmd_queue):
-    """
-    Background worker thread that pops commands from the queue
-    and executes them (preventing AppleScript from lagging the camera).
-    """
     while True:
         func, args = cmd_queue.get()
         if func is None:
@@ -33,7 +30,6 @@ def command_worker(cmd_queue):
         cmd_queue.task_done()
 
 def main():
-    # Load the hand landmark model
     base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
     options = vision.HandLandmarkerOptions(
         base_options=base_options,
@@ -42,7 +38,6 @@ def main():
     )
     detector = vision.HandLandmarker.create_from_options(options)
     
-    # State tracking variables
     volume_control_active = False
     start_y = 0.0
     start_volume = 50
@@ -54,8 +49,8 @@ def main():
     last_volume_time = 0.0 
     hud_message = ""
     hud_message_expiry = 0.0 
+    palm_counter = 0
     
-    # Initialize background worker thread
     cmd_queue = queue.Queue()
     worker_thread = threading.Thread(target=command_worker, args=(cmd_queue,), daemon=True)
     worker_thread.start()
@@ -82,7 +77,6 @@ def main():
         
         if result.hand_landmarks:
             for hand_landmarks, handedness in zip(result.hand_landmarks, result.handedness):
-                # Draw the skeleton connection lines
                 for start_idx, end_idx in CONNECTIONS:
                     start_pt = hand_landmarks[start_idx]
                     end_pt = hand_landmarks[end_idx]
@@ -90,19 +84,18 @@ def main():
                     end_pixel = (int(end_pt.x * w), int(end_pt.y * h))
                     cv2.line(frame, start_pixel, end_pixel, (255, 255, 0), 2)
                 
-                # Draw the joint points
                 for idx, landmark in enumerate(hand_landmarks):
                     pixel = (int(landmark.x * w), int(landmark.y * h))
                     if idx == 8:
-                        cv2.circle(frame, pixel, 8, (0, 0, 255), -1) # Red tip
+                        cv2.circle(frame, pixel, 8, (0, 0, 255), -1)
                     else:
-                        cv2.circle(frame, pixel, 5, (0, 255, 0), -1) # Green joints
+                        cv2.circle(frame, pixel, 5, (0, 255, 0), -1)
                 
                 hand_label = handedness[0].category_name
                 thumb_tip = hand_landmarks[4]
                 index_tip = hand_landmarks[8]
                 
-                # --- PHYSICAL LEFT HAND (Detected as "Right" in mirrored view) ---
+                # --- LEFT HAND (Volume) ---
                 if hand_label == "Right":
                     distance = calculate_distance(thumb_tip, index_tip)
                     gesture = classify_gesture(hand_landmarks, hand_label)
@@ -112,7 +105,6 @@ def main():
                             volume_control_active = True
                             start_y = index_tip.y
                             start_volume = current_volume
-                            print(f"[Left Hand] 🔒 Volume Locked! Start Y: {start_y:.2f} | Vol: {start_volume}%")
                         else:
                             delta_y = start_y - index_tip.y
                             volume_change = (delta_y / 0.3) * 50
@@ -124,21 +116,14 @@ def main():
                             if current_time - last_volume_time > 0.10:
                                 cmd_queue.put((media.set_system_volume, (current_volume,)))
                                 last_volume_time = current_time
-                            
-                            bar_length = 10
-                            filled_blocks = int(current_volume / 10)
-                            empty_blocks = bar_length - filled_blocks
-                            volume_bar = "🁢" * filled_blocks + "🀆" * empty_blocks
-                            print(f"[Left Hand] Volume Control | [{volume_bar}] {current_volume}%")
                     else:
                         volume_control_active = False
 
-                # --- PHYSICAL RIGHT HAND (Detected as "Left" in mirrored view) ---
+                # --- RIGHT HAND (Media) ---
                 elif hand_label == "Left":
                     volume_control_active = False
                     x_history.append(index_tip.x)
                     
-                    # 1. Swipes
                     if current_time - last_gesture_time > 1.5:
                         if len(x_history) == 15:
                             displacement = x_history[-1] - x_history[0]
@@ -148,7 +133,6 @@ def main():
                                 cmd_queue.put((media.next_track, ()))
                                 hud_message = "SKIP AHEAD"
                                 hud_message_expiry = current_time + 2.0
-                                print("[Right Hand] Skip Ahead triggered.")
                                
                             elif displacement < -0.25:
                                 last_gesture_time = current_time 
@@ -156,43 +140,139 @@ def main():
                                 cmd_queue.put((media.previous_track, ()))
                                 hud_message = "SKIP BACK"
                                 hud_message_expiry = current_time + 2.0
-                                print("[Right Hand] Skip Back triggered.")
                     
-                    # 2. Open Palm Play/Pause
                     gesture = classify_gesture(hand_landmarks, hand_label)
                     if current_time - last_gesture_time > 1.5:
                         if gesture == "Open Palm":
-                            cmd_queue.put((media.toggle_play_pause, ()))
-                            last_gesture_time = current_time
-                            hud_message = "PLAY / PAUSE"
-                            hud_message_expiry = current_time + 2.0
-                            print("[Right Hand] Play/Pause toggled.")
+                            palm_counter += 1
+                            if palm_counter >= 5:
+                                cmd_queue.put((media.toggle_play_pause, ()))
+                                last_gesture_time = current_time
+                                palm_counter = 0  # Reset after trigger
+                                hud_message = "PLAY / PAUSE"
+                                hud_message_expiry = current_time + 2.0
+                        else:
+                            palm_counter = 0  # Reset counter if hand changes shape
             
         else:
-            # Clear data when hand exits the frame
             x_history.clear()
             volume_control_active = False
+            palm_counter = 0
            
-        # Draw Volume Locking Bar OSD
+        # --- DRAW GLASSMORPHISM VOLUME BAR ---
         if volume_control_active:
-            cv2.rectangle(frame, (30, 150), (60, 350), (100, 100, 100), 2)
-            filled_height = int(current_volume * 2)
-            cv2.rectangle(frame, (30, 350 - filled_height), (60, 350), (255, 120, 0), -1)
-            cv2.putText(frame, f"Vol: {current_volume}%", (20, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-            cv2.putText(frame, "[LOCKED]", (20, 380), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            vx1, vy1 = 15, 100
+            vx2, vy2 = 75, 400
+            vw = vx2 - vx1
+            vh = vy2 - vy1
+            vr = vw // 2
 
-        # Draw Notification HUD
-        if current_time < hud_message_expiry:
-            overlay = frame.copy()
-            cv2.rectangle(overlay, (w // 2 - 140, h - 70), (w // 2 + 140, h - 30), (0, 0, 0), -1)
-            cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
-            cv2.putText(frame, hud_message, (w // 2 - 110, h - 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            if vx1 >= 0 and vy1 >= 0 and vx2 <= w and vy2 <= h:
+                # Background Frosted Glass
+                v_roi = frame[vy1:vy2, vx1:vx2]
+                v_blurred = cv2.GaussianBlur(v_roi, (45, 45), 0)
+                v_milky = np.full(v_roi.shape, (255, 255, 255), dtype=np.uint8)
+                v_glass = cv2.addWeighted(v_blurred, 0.65, v_milky, 0.35, 0)
+
+                v_mask = np.zeros((vh, vw), dtype=np.uint8)
+                cv2.circle(v_mask, (vr, vr), vr, 255, -1)
+                cv2.circle(v_mask, (vr, vh - vr), vr, 255, -1)
+                cv2.rectangle(v_mask, (0, vr), (vw, vh - vr), 255, -1)
+
+                v_mask_3d = cv2.cvtColor(v_mask, cv2.COLOR_GRAY2BGR) / 255.0
+                frame[vy1:vy2, vx1:vx2] = (v_glass * v_mask_3d + v_roi * (1 - v_mask_3d)).astype(np.uint8)
+
+                # Edge Highlights
+                cv2.circle(frame, (vx1 + vr, vy1 + vr), vr, (220, 220, 220), 1)
+                cv2.circle(frame, (vx1 + vr, vy2 - vr), vr, (220, 220, 220), 1)
+                cv2.line(frame, (vx1, vy1 + vr), (vx1, vy2 - vr), (220, 220, 220), 1)
+                cv2.line(frame, (vx2, vy1 + vr), (vx2, vy2 - vr), (220, 220, 220), 1)
+
+                # Inner Transparent Volume Bar
+                bar_x1, bar_y1 = vx1 + 15, vy1 + 50
+                bar_x2, bar_y2 = vx2 - 15, vy2 - 50
+                bar_h = bar_y2 - bar_y1
+
+                cv2.rectangle(frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (180, 180, 180), 2)
+                fill_height = int((current_volume / 100.0) * bar_h)
+
+                if fill_height > 0:
+                    y_start = bar_y2 - fill_height
+                    y_end = bar_y2
+                    overlay = frame[y_start:y_end, bar_x1:bar_x2].copy()
+                    cv2.rectangle(overlay, (0, 0), (bar_x2 - bar_x1, fill_height), (255, 150, 50), -1)
+                    cv2.addWeighted(overlay, 0.6, frame[y_start:y_end, bar_x1:bar_x2], 0.4, 0, frame[y_start:y_end, bar_x1:bar_x2])
+
+                # Use SIMPLEX for a rounder, modern sans-serif look
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.5
+                thickness = 2
+
+                # Volume Text with Black Outline
+                vol_text = f"{current_volume}%"
+                ts_vol, _ = cv2.getTextSize(vol_text, font, font_scale, thickness)
+                t_x = vx1 + (vw - ts_vol[0]) // 2
+                t_y = vy1 + 30
+                cv2.putText(frame, vol_text, (t_x, t_y), font, font_scale, (0, 0, 0), thickness + 2) # Black Outline
+                cv2.putText(frame, vol_text, (t_x, t_y), font, font_scale, (255, 255, 255), thickness) # White Fill
+
+                # Lock Text with Black Outline
+                lock_text = "LOCK"
+                ts_lock, _ = cv2.getTextSize(lock_text, font, font_scale, thickness)
+                lt_x = vx1 + (vw - ts_lock[0]) // 2
+                lt_y = vy2 - 15
+                cv2.putText(frame, lock_text, (lt_x, lt_y), font, font_scale, (0, 0, 0), thickness + 2) # Black Outline
+                cv2.putText(frame, lock_text, (lt_x, lt_y), font, font_scale, (0, 255, 0), thickness) # Green Fill
+
+        # --- DRAW GLASSMORPHISM HUD ---
+        if current_time < hud_message_expiry and hud_message:
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.8
+            thickness = 2
+
+            text_size, _ = cv2.getTextSize(hud_message, font, font_scale, thickness)
+            padding_x, padding_y = 30, 15
+            pill_w = text_size[0] + padding_x * 2
+            pill_h = text_size[1] + padding_y * 2
+
+            cx, cy = w // 2, h - 70
+            x1 = cx - pill_w // 2
+            y1 = cy - pill_h // 2
+            x2 = x1 + pill_w
+            y2 = y1 + pill_h
+
+            if x1 >= 0 and y1 >= 0 and x2 <= w and y2 <= h:
+                # Background Frosted Glass
+                roi = frame[y1:y2, x1:x2].copy()
+                blurred_roi = cv2.GaussianBlur(roi, (45, 45), 0)
+
+                milky = np.full(roi.shape, (255, 255, 255), dtype=np.uint8)
+                glass = cv2.addWeighted(blurred_roi, 0.65, milky, 0.35, 0)
+
+                mask = np.zeros((pill_h, pill_w), dtype=np.uint8)
+                r = pill_h // 2
+                cv2.circle(mask, (r, r), r, 255, -1)
+                cv2.circle(mask, (pill_w - r, r), r, 255, -1)
+                cv2.rectangle(mask, (r, 0), (pill_w - r, pill_h), 255, -1)
+
+                mask_3d = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR) / 255.0
+                frame[y1:y2, x1:x2] = (glass * mask_3d + roi * (1 - mask_3d)).astype(np.uint8)
+
+                # Edge Highlights
+                cv2.circle(frame, (x1 + r, y1 + r), r, (220, 220, 220), 1)
+                cv2.circle(frame, (x2 - r, y1 + r), r, (220, 220, 220), 1)
+                cv2.line(frame, (x1 + r, y1), (x2 - r, y1), (220, 220, 220), 1)
+                cv2.line(frame, (x1 + r, y2), (x2 - r, y2), (220, 220, 220), 1)
+
+                # HUD Text with Black Outline
+                text_x, text_y = cx - text_size[0] // 2, cy + text_size[1] // 2
+                cv2.putText(frame, hud_message, (text_x, text_y), font, font_scale, (0, 0, 0), thickness + 2)
+                cv2.putText(frame, hud_message, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
        
         cv2.imshow('Camera Feed', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
             
-    # Clean up resources
     cmd_queue.put((None, ()))
     detector.close()
     cap.release() 
