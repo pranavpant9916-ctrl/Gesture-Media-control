@@ -16,6 +16,7 @@ Instead of installing heavy packages that trigger macOS security alerts, the sys
 | **YouTube (Chrome/Safari)** | Toggle Video | Skip Forward 10s | Skip Backward 10s | System Volume |
 | **Netflix (Chrome/Safari)** | Toggle Video | Skip Forward 10s | Skip Backward 10s | System Volume |
 | **IINA Player** | Toggle Video | Skip Forward (Arrow R) | Skip Backward (Arrow L) | System Volume |
+| **VLC Media Player** | Toggle Video | Skip Forward (Arrow R) | Skip Backward (Arrow L) | System Volume |
 
 ---
 

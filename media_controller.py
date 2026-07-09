@@ -19,6 +19,9 @@ def toggle_play_pause():
     else if frontAppName contains "Music" then
         tell application "Music" to playpause
         return
+    else if frontAppName contains "VLC" then
+        tell application "VLC" to play
+        return
     else if frontAppName contains "IINA" then
         tell application "System Events" to keystroke " "
         return
@@ -64,6 +67,9 @@ def toggle_play_pause():
     tell application "System Events"
         if (exists process "Spotify") then
             tell application "Spotify" to playpause
+            return
+        else if (exists process "VLC") then
+            tell application "VLC" to play
             return
         else if (exists process "Music") then
             tell application "Music" to playpause
@@ -125,6 +131,9 @@ def next_track():
     if frontAppName contains "Spotify" then
         tell application "Spotify" to next track
         return
+    else if frontAppName contains "VLC" then
+        tell application "VLC" to next
+        return
     else if frontAppName contains "Music" then
         tell application "Music" to next track
         return
@@ -176,6 +185,9 @@ def next_track():
         else if (exists process "Music") then
             tell application "Music" to next track
             return
+        else if (exists process "VLC") then
+            tell application "VLC" to next
+            return
         end if
     end tell
     '''
@@ -190,6 +202,9 @@ def previous_track():
 
     if frontAppName contains "Spotify" then
         tell application "Spotify" to previous track
+        return
+    else if frontAppName contains "VLC" then
+        tell application "VLC" to previous
         return
     else if frontAppName contains "Music" then
         tell application "Music" to previous track
@@ -241,6 +256,9 @@ def previous_track():
             return
         else if (exists process "Music") then
             tell application "Music" to previous track
+            return
+        else if (exists process "VLC") then
+            tell application "VLC" to previous
             return
         end if
     end tell
