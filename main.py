@@ -203,12 +203,11 @@ def main():
                     cv2.rectangle(overlay, (0, 0), (bar_x2 - bar_x1, fill_height), (255, 150, 50), -1)
                     cv2.addWeighted(overlay, 0.6, frame[y_start:y_end, bar_x1:bar_x2], 0.4, 0, frame[y_start:y_end, bar_x1:bar_x2])
 
-                # Use SIMPLEX for a rounder, modern sans-serif look
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 font_scale = 0.5
                 thickness = 2
 
-                # Volume Text with Black Outline
+
                 vol_text = f"{current_volume}%"
                 ts_vol, _ = cv2.getTextSize(vol_text, font, font_scale, thickness)
                 t_x = vx1 + (vw - ts_vol[0]) // 2
@@ -216,7 +215,7 @@ def main():
                 cv2.putText(frame, vol_text, (t_x, t_y), font, font_scale, (0, 0, 0), thickness + 2) # Black Outline
                 cv2.putText(frame, vol_text, (t_x, t_y), font, font_scale, (255, 255, 255), thickness) # White Fill
 
-                # Lock Text with Black Outline
+
                 lock_text = "LOCK"
                 ts_lock, _ = cv2.getTextSize(lock_text, font, font_scale, thickness)
                 lt_x = vx1 + (vw - ts_lock[0]) // 2
@@ -224,7 +223,7 @@ def main():
                 cv2.putText(frame, lock_text, (lt_x, lt_y), font, font_scale, (0, 0, 0), thickness + 2) # Black Outline
                 cv2.putText(frame, lock_text, (lt_x, lt_y), font, font_scale, (0, 255, 0), thickness) # Green Fill
 
-        # --- DRAW GLASSMORPHISM HUD ---
+
         if current_time < hud_message_expiry and hud_message:
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 0.8
@@ -242,7 +241,7 @@ def main():
             y2 = y1 + pill_h
 
             if x1 >= 0 and y1 >= 0 and x2 <= w and y2 <= h:
-                # Background Frosted Glass
+
                 roi = frame[y1:y2, x1:x2].copy()
                 blurred_roi = cv2.GaussianBlur(roi, (45, 45), 0)
 
@@ -258,17 +257,70 @@ def main():
                 mask_3d = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR) / 255.0
                 frame[y1:y2, x1:x2] = (glass * mask_3d + roi * (1 - mask_3d)).astype(np.uint8)
 
-                # Edge Highlights
+
                 cv2.circle(frame, (x1 + r, y1 + r), r, (220, 220, 220), 1)
                 cv2.circle(frame, (x2 - r, y1 + r), r, (220, 220, 220), 1)
                 cv2.line(frame, (x1 + r, y1), (x2 - r, y1), (220, 220, 220), 1)
                 cv2.line(frame, (x1 + r, y2), (x2 - r, y2), (220, 220, 220), 1)
 
-                # HUD Text with Black Outline
+
                 text_x, text_y = cx - text_size[0] // 2, cy + text_size[1] // 2
                 cv2.putText(frame, hud_message, (text_x, text_y), font, font_scale, (0, 0, 0), thickness + 2)
                 cv2.putText(frame, hud_message, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
        
+        dx1, dy1 = w - 245, 15
+        dx2, dy2 = w - 15, 115
+        dw = dx2 - dx1
+        dh = dy2 - dy1
+        dr = 10
+        if dx1 >= 0 and dy1 >= 0 and dx2 <= w and dy2 <= h:
+            d_roi = frame[dy1:dy2, dx1:dx2].copy()
+            d_blurred = cv2.GaussianBlur(d_roi, (35, 35), 0)
+            d_milky = np.full(d_roi.shape, (255, 255, 255), dtype=np.uint8)
+            d_glass = cv2.addWeighted(d_blurred, 0.70, d_milky, 0.30, 0)
+
+            d_mask = np.zeros((dh, dw), dtype=np.uint8)
+            cv2.rectangle(d_mask, (0, dr), (dw, dh - dr), 255, -1)
+            cv2.rectangle(d_mask, (dr, 0), (dw - dr, dh), 255, -1)
+            cv2.circle(d_mask, (dr, dr), dr, 255, -1)
+            cv2.circle(d_mask, (dw - dr, dr), dr, 255, -1)
+            cv2.circle(d_mask, (dr, dh - dr), dr, 255, -1)
+            cv2.circle(d_mask, (dw - dr, dh - dr), dr, 255, -1)
+
+            d_mask_3d = cv2.cvtColor(d_mask, cv2.COLOR_GRAY2BGR) / 255.0
+            frame[dy1:dy2, dx1:dx2] = (d_glass * d_mask_3d + d_roi * (1 - d_mask_3d)).astype(np.uint8)
+
+            d_font = cv2.FONT_HERSHEY_SIMPLEX
+
+            cv2.putText(frame, "SYSTEM STATUS", (dx1 + 15, dy1 + 25), d_font, 0.45, (0, 0, 0), 2)
+            cv2.putText(frame, "SYSTEM STATUS", (dx1 + 15, dy1 + 25), d_font, 0.45, (255, 255, 255), 1)
+            cv2.line(frame, (dx1 + 15, dy1 + 32), (dx2 - 15, dy1 + 32), (200, 200, 200), 1)
+
+            if result.hand_landmarks:
+                t_txt, t_col = "ACTIVE", (0, 255, 0) # Green
+            else:
+                t_txt, t_col = "SEARCHING", (50, 50, 255) # Red
+
+            cv2.putText(frame, "Tracking:", (dx1 + 15, dy1 + 55), d_font, 0.4, (0, 0, 0), 2)
+            cv2.putText(frame, "Tracking:", (dx1 + 15, dy1 + 55), d_font, 0.4, (220, 220, 220), 1)
+            cv2.putText(frame, t_txt, (dx1 + 85, dy1 + 55), d_font, 0.4, (0, 0, 0), 2)
+            cv2.putText(frame, t_txt, (dx1 + 85, dy1 + 55), d_font, 0.4, t_col, 1)
+
+            v_txt, v_col = ("LOCKED", (0, 255, 255)) if volume_control_active else ("IDLE", (200, 200, 200))
+            cv2.putText(frame, "L-Hand:", (dx1 + 15, dy1 + 75), d_font, 0.4, (0, 0, 0), 2)
+            cv2.putText(frame, "L-Hand:", (dx1 + 15, dy1 + 75), d_font, 0.4, (220, 220, 220), 1)
+            cv2.putText(frame, v_txt, (dx1 + 85, dy1 + 75), d_font, 0.4, (0, 0, 0), 2)
+            cv2.putText(frame, v_txt, (dx1 + 85, dy1 + 75), d_font, 0.4, v_col, 1)
+
+            if palm_counter > 0:
+                m_txt, m_col = f"PALM ({palm_counter}/5)", (0, 165, 255) # Orange
+            else:
+                m_txt, m_col = "IDLE", (200, 200, 200)
+
+            cv2.putText(frame, "R-Hand:", (dx1 + 15, dy1 + 95), d_font, 0.4, (0, 0, 0), 2)
+            cv2.putText(frame, "R-Hand:", (dx1 + 15, dy1 + 95), d_font, 0.4, (220, 220, 220), 1)
+            cv2.putText(frame, m_txt, (dx1 + 85, dy1 + 95), d_font, 0.4, (0, 0, 0), 2)
+            cv2.putText(frame, m_txt, (dx1 + 85, dy1 + 95), d_font, 0.4, m_col, 1)
         cv2.imshow('Camera Feed', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
