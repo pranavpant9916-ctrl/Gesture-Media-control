@@ -21,6 +21,31 @@ CONNECTIONS = [
     (0,17) 
 ]
 
+class WebcamStream:
+    """Runs the webcam on a separate thread to achieve 60fps without lag."""
+    def __init__(self, src=0):
+        self.stream = cv2.VideoCapture(src)
+        self.grabbed, self.frame = self.stream.read()
+        self.stopped = False
+
+    def start(self):
+        threading.Thread(target=self.update, daemon=True).start()
+        return self
+
+    def update(self):
+        while not self.stopped:
+            self.grabbed, self.frame = self.stream.read()
+
+    def read(self):
+        return self.grabbed, self.frame
+
+    def isOpened(self):
+        return self.stream.isOpened()
+
+    def release(self):
+        self.stopped = True
+        self.stream.release()
+
 def command_worker(cmd_queue):
     while True:
         func, args = cmd_queue.get()
@@ -50,12 +75,19 @@ def main():
     hud_message = ""
     hud_message_expiry = 0.0 
     palm_counter = 0
+
+    vol_alpha = 0.0
+    hud_alpha = 0.0
+    hud_y_offset = 20.0
     
     cmd_queue = queue.Queue()
     worker_thread = threading.Thread(target=command_worker, args=(cmd_queue,), daemon=True)
     worker_thread.start()
     
-    cap = cv2.VideoCapture(0)
+    print("Starting 60fps Camera Thread...")
+    cap = WebcamStream(0).start()
+    time.sleep(1.0)
+
     if not cap.isOpened():
         print("Error: Could not open Camera.")
         return
@@ -65,8 +97,7 @@ def main():
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Error: Could not read frame.")
-            break
+            continue
         
         frame = cv2.flip(frame, 1)
         h, w, _ = frame.shape
@@ -94,8 +125,8 @@ def main():
                 hand_label = handedness[0].category_name
                 thumb_tip = hand_landmarks[4]
                 index_tip = hand_landmarks[8]
-                
-                # --- LEFT HAND (Volume) ---
+
+
                 if hand_label == "Right":
                     distance = calculate_distance(thumb_tip, index_tip)
                     gesture = classify_gesture(hand_landmarks, hand_label)
@@ -119,7 +150,7 @@ def main():
                     else:
                         volume_control_active = False
 
-                # --- RIGHT HAND (Media) ---
+
                 elif hand_label == "Left":
                     volume_control_active = False
                     x_history.append(index_tip.x)
@@ -148,19 +179,33 @@ def main():
                             if palm_counter >= 5:
                                 cmd_queue.put((media.toggle_play_pause, ()))
                                 last_gesture_time = current_time
-                                palm_counter = 0  # Reset after trigger
+                                palm_counter = 0
                                 hud_message = "PLAY / PAUSE"
                                 hud_message_expiry = current_time + 2.0
                         else:
-                            palm_counter = 0  # Reset counter if hand changes shape
+                            palm_counter = 0
             
         else:
             x_history.clear()
             volume_control_active = False
             palm_counter = 0
-           
+
+        target_vol_alpha = 1.0 if volume_control_active else 0.0
+        vol_alpha += (target_vol_alpha - vol_alpha) * 0.15
+
+        hud_active = (current_time < hud_message_expiry and hud_message != "")
+        target_hud_alpha = 1.0 if hud_active else 0.0
+        target_hud_y = 0.0 if hud_active else 20.0
+
+        hud_alpha += (target_hud_alpha - hud_alpha) * 0.15
+        hud_y_offset += (target_hud_y - hud_y_offset) * 0.15
+
+
+        temp_frame = frame.copy()
+
+
         # --- DRAW GLASSMORPHISM VOLUME BAR ---
-        if volume_control_active:
+        if vol_alpha > 0.01:
             vx1, vy1 = 15, 100
             vx2, vy2 = 75, 400
             vw = vx2 - vx1
@@ -168,8 +213,8 @@ def main():
             vr = vw // 2
 
             if vx1 >= 0 and vy1 >= 0 and vx2 <= w and vy2 <= h:
-                # Background Frosted Glass
-                v_roi = frame[vy1:vy2, vx1:vx2]
+
+                v_roi = temp_frame[vy1:vy2, vx1:vx2]
                 v_blurred = cv2.GaussianBlur(v_roi, (45, 45), 0)
                 v_milky = np.full(v_roi.shape, (255, 255, 255), dtype=np.uint8)
                 v_glass = cv2.addWeighted(v_blurred, 0.65, v_milky, 0.35, 0)
@@ -180,51 +225,45 @@ def main():
                 cv2.rectangle(v_mask, (0, vr), (vw, vh - vr), 255, -1)
 
                 v_mask_3d = cv2.cvtColor(v_mask, cv2.COLOR_GRAY2BGR) / 255.0
-                frame[vy1:vy2, vx1:vx2] = (v_glass * v_mask_3d + v_roi * (1 - v_mask_3d)).astype(np.uint8)
+                temp_frame[vy1:vy2, vx1:vx2] = (v_glass * v_mask_3d + v_roi * (1 - v_mask_3d)).astype(np.uint8)
 
-                # Edge Highlights
-                cv2.circle(frame, (vx1 + vr, vy1 + vr), vr, (220, 220, 220), 1)
-                cv2.circle(frame, (vx1 + vr, vy2 - vr), vr, (220, 220, 220), 1)
-                cv2.line(frame, (vx1, vy1 + vr), (vx1, vy2 - vr), (220, 220, 220), 1)
-                cv2.line(frame, (vx2, vy1 + vr), (vx2, vy2 - vr), (220, 220, 220), 1)
+                cv2.circle(temp_frame, (vx1 + vr, vy1 + vr), vr, (220, 220, 220), 1)
+                cv2.circle(temp_frame, (vx1 + vr, vy2 - vr), vr, (220, 220, 220), 1)
+                cv2.line(temp_frame, (vx1, vy1 + vr), (vx1, vy2 - vr), (220, 220, 220), 1)
+                cv2.line(temp_frame, (vx2, vy1 + vr), (vx2, vy2 - vr), (220, 220, 220), 1)
 
-                # Inner Transparent Volume Bar
                 bar_x1, bar_y1 = vx1 + 15, vy1 + 50
                 bar_x2, bar_y2 = vx2 - 15, vy2 - 50
                 bar_h = bar_y2 - bar_y1
 
-                cv2.rectangle(frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (180, 180, 180), 2)
+                cv2.rectangle(temp_frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (180, 180, 180), 2)
                 fill_height = int((current_volume / 100.0) * bar_h)
 
                 if fill_height > 0:
                     y_start = bar_y2 - fill_height
                     y_end = bar_y2
-                    overlay = frame[y_start:y_end, bar_x1:bar_x2].copy()
+                    overlay = temp_frame[y_start:y_end, bar_x1:bar_x2].copy()
                     cv2.rectangle(overlay, (0, 0), (bar_x2 - bar_x1, fill_height), (255, 150, 50), -1)
-                    cv2.addWeighted(overlay, 0.6, frame[y_start:y_end, bar_x1:bar_x2], 0.4, 0, frame[y_start:y_end, bar_x1:bar_x2])
+                    cv2.addWeighted(overlay, 0.6, temp_frame[y_start:y_end, bar_x1:bar_x2], 0.4, 0, temp_frame[y_start:y_end, bar_x1:bar_x2])
 
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 font_scale = 0.5
                 thickness = 2
 
-
                 vol_text = f"{current_volume}%"
                 ts_vol, _ = cv2.getTextSize(vol_text, font, font_scale, thickness)
                 t_x = vx1 + (vw - ts_vol[0]) // 2
                 t_y = vy1 + 30
-                cv2.putText(frame, vol_text, (t_x, t_y), font, font_scale, (0, 0, 0), thickness + 2) # Black Outline
-                cv2.putText(frame, vol_text, (t_x, t_y), font, font_scale, (255, 255, 255), thickness) # White Fill
+                cv2.putText(temp_frame, vol_text, (t_x, t_y), font, font_scale, (0, 0, 0), thickness + 2)
+                cv2.putText(temp_frame, vol_text, (t_x, t_y), font, font_scale, (255, 255, 255), thickness)
+
+                f_roi = frame[vy1:vy2, vx1:vx2]
+                t_roi = temp_frame[vy1:vy2, vx1:vx2]
+                frame[vy1:vy2, vx1:vx2] = cv2.addWeighted(t_roi, vol_alpha, f_roi, 1.0 - vol_alpha, 0)
 
 
-                lock_text = "LOCK"
-                ts_lock, _ = cv2.getTextSize(lock_text, font, font_scale, thickness)
-                lt_x = vx1 + (vw - ts_lock[0]) // 2
-                lt_y = vy2 - 15
-                cv2.putText(frame, lock_text, (lt_x, lt_y), font, font_scale, (0, 0, 0), thickness + 2) # Black Outline
-                cv2.putText(frame, lock_text, (lt_x, lt_y), font, font_scale, (0, 255, 0), thickness) # Green Fill
-
-
-        if current_time < hud_message_expiry and hud_message:
+        # --- GLASSMORPHISM HUD ---
+        if hud_alpha > 0.01:
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 0.8
             thickness = 2
@@ -234,7 +273,8 @@ def main():
             pill_w = text_size[0] + padding_x * 2
             pill_h = text_size[1] + padding_y * 2
 
-            cx, cy = w // 2, h - 70
+
+            cx, cy = w // 2, h - 70 + int(hud_y_offset)
             x1 = cx - pill_w // 2
             y1 = cy - pill_h // 2
             x2 = x1 + pill_w
@@ -242,9 +282,8 @@ def main():
 
             if x1 >= 0 and y1 >= 0 and x2 <= w and y2 <= h:
 
-                roi = frame[y1:y2, x1:x2].copy()
+                roi = temp_frame[y1:y2, x1:x2].copy()
                 blurred_roi = cv2.GaussianBlur(roi, (45, 45), 0)
-
                 milky = np.full(roi.shape, (255, 255, 255), dtype=np.uint8)
                 glass = cv2.addWeighted(blurred_roi, 0.65, milky, 0.35, 0)
 
@@ -255,19 +294,23 @@ def main():
                 cv2.rectangle(mask, (r, 0), (pill_w - r, pill_h), 255, -1)
 
                 mask_3d = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR) / 255.0
-                frame[y1:y2, x1:x2] = (glass * mask_3d + roi * (1 - mask_3d)).astype(np.uint8)
+                temp_frame[y1:y2, x1:x2] = (glass * mask_3d + roi * (1 - mask_3d)).astype(np.uint8)
 
-
-                cv2.circle(frame, (x1 + r, y1 + r), r, (220, 220, 220), 1)
-                cv2.circle(frame, (x2 - r, y1 + r), r, (220, 220, 220), 1)
-                cv2.line(frame, (x1 + r, y1), (x2 - r, y1), (220, 220, 220), 1)
-                cv2.line(frame, (x1 + r, y2), (x2 - r, y2), (220, 220, 220), 1)
-
+                cv2.circle(temp_frame, (x1 + r, y1 + r), r, (220, 220, 220), 1)
+                cv2.circle(temp_frame, (x2 - r, y1 + r), r, (220, 220, 220), 1)
+                cv2.line(temp_frame, (x1 + r, y1), (x2 - r, y1), (220, 220, 220), 1)
+                cv2.line(temp_frame, (x1 + r, y2), (x2 - r, y2), (220, 220, 220), 1)
 
                 text_x, text_y = cx - text_size[0] // 2, cy + text_size[1] // 2
-                cv2.putText(frame, hud_message, (text_x, text_y), font, font_scale, (0, 0, 0), thickness + 2)
-                cv2.putText(frame, hud_message, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
+                cv2.putText(temp_frame, hud_message, (text_x, text_y), font, font_scale, (0, 0, 0), thickness + 2)
+                cv2.putText(temp_frame, hud_message, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
+
+                f_roi = frame[y1:y2, x1:x2]
+                t_roi = temp_frame[y1:y2, x1:x2]
+                frame[y1:y2, x1:x2] = cv2.addWeighted(t_roi, hud_alpha, f_roi, 1.0 - hud_alpha, 0)
+
        
+        # --- STATUS DASHBOARD ---
         dx1, dy1 = w - 245, 15
         dx2, dy2 = w - 15, 115
         dw = dx2 - dx1
@@ -297,23 +340,23 @@ def main():
             cv2.line(frame, (dx1 + 15, dy1 + 32), (dx2 - 15, dy1 + 32), (200, 200, 200), 1)
 
             if result.hand_landmarks:
-                t_txt, t_col = "ACTIVE", (0, 255, 0) # Green
+                t_txt, t_col = "ACTIVE", (0, 255, 0)
             else:
-                t_txt, t_col = "SEARCHING", (50, 50, 255) # Red
+                t_txt, t_col = "SEARCHING", (50, 50, 255)
 
             cv2.putText(frame, "Tracking:", (dx1 + 15, dy1 + 55), d_font, 0.4, (0, 0, 0), 2)
             cv2.putText(frame, "Tracking:", (dx1 + 15, dy1 + 55), d_font, 0.4, (220, 220, 220), 1)
             cv2.putText(frame, t_txt, (dx1 + 85, dy1 + 55), d_font, 0.4, (0, 0, 0), 2)
             cv2.putText(frame, t_txt, (dx1 + 85, dy1 + 55), d_font, 0.4, t_col, 1)
 
-            v_txt, v_col = ("LOCKED", (0, 255, 255)) if volume_control_active else ("IDLE", (200, 200, 200))
+            v_txt, v_col = ("ACTIVE", (0, 255, 255)) if volume_control_active else ("IDLE", (200, 200, 200))
             cv2.putText(frame, "L-Hand:", (dx1 + 15, dy1 + 75), d_font, 0.4, (0, 0, 0), 2)
             cv2.putText(frame, "L-Hand:", (dx1 + 15, dy1 + 75), d_font, 0.4, (220, 220, 220), 1)
             cv2.putText(frame, v_txt, (dx1 + 85, dy1 + 75), d_font, 0.4, (0, 0, 0), 2)
             cv2.putText(frame, v_txt, (dx1 + 85, dy1 + 75), d_font, 0.4, v_col, 1)
 
             if palm_counter > 0:
-                m_txt, m_col = f"PALM ({palm_counter}/5)", (0, 165, 255) # Orange
+                m_txt, m_col = f"PALM ({palm_counter}/5)", (0, 165, 255)
             else:
                 m_txt, m_col = "IDLE", (200, 200, 200)
 
@@ -321,6 +364,7 @@ def main():
             cv2.putText(frame, "R-Hand:", (dx1 + 15, dy1 + 95), d_font, 0.4, (220, 220, 220), 1)
             cv2.putText(frame, m_txt, (dx1 + 85, dy1 + 95), d_font, 0.4, (0, 0, 0), 2)
             cv2.putText(frame, m_txt, (dx1 + 85, dy1 + 95), d_font, 0.4, m_col, 1)
+
         cv2.imshow('Camera Feed', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
