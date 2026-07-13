@@ -1,11 +1,32 @@
 import subprocess
+import platform
+
+os_name = platform.system()
+
+if os_name == "Windows":
+    import ctypes
+    vk_media_play_pause = 0xB3
+    vk_media_next_track = 0xB0
+    vk_media_prev_track = 0xB1
+    def win_key(code):
+        ctypes.windll.user32.keybd_event(code, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(code, 0, 2, 0)
 
 def set_system_volume(volume_level):
+    if os_name != "Darwin":
+        return
     volume = max(0, min(100, int(volume_level)))
     script = f"set volume output volume {volume}"
     subprocess.run(["osascript", "-e", script])
 
 def toggle_play_pause():
+    if os_name == "Windows":
+        win_key(vk_media_play_pause)
+        return
+    elif os_name == "Linux":
+        subprocess.run(["playerctl", "play-pause"])
+        return
+
     applescript = '''
     -- Get active application name without using System Events (Permission-Free)
     set frontAppPath to (path to frontmost application as text)
@@ -122,6 +143,12 @@ def toggle_play_pause():
     subprocess.run(["osascript", "-e", applescript])
 
 def next_track():
+    if os_name == "Windows":
+        win_key(vk_media_next_track)
+        return
+    elif os_name == "Linux":
+        subprocess.run(["playerctl", "next"])
+        return
     applescript = '''
     set frontAppPath to (path to frontmost application as text)
     set AppleScript's text item delimiters to ":"
@@ -194,6 +221,12 @@ def next_track():
     subprocess.run(["osascript", "-e", applescript])
 
 def previous_track():
+    if os_name == "Windows":
+        win_key(vk_media_prev_track)
+        return
+    elif os_name == "Linux":
+        subprocess.run(["playerctl", "previous"])
+        return
     applescript = '''
     set frontAppPath to (path to frontmost application as text)
     set AppleScript's text item delimiters to ":"
