@@ -1,4 +1,4 @@
-# Real-Time Gesture Media Controller (macOS)
+# Real-Time Gesture Media Controller
  
 ---
 
@@ -34,7 +34,7 @@ A common issue in swipe-detection algorithms is that when you swipe your hand an
 
 ### 3. Context-Aware Targeting (Focus Priority)
 If you have both Spotify playing in the background and a YouTube video open in the foreground, standard media key presses can be unpredictable.
-*   **The Solution**: The automation script queries macOS for the frontmost application. If you are actively looking at Chrome, Safari, or IINA, it targets the active video. If no media player is focused, it falls back to controlling your background music player.
+*   **The Solution**: The automation script queries macOS for the frontmost application. If you are actively looking at Chrome, Safari, VLC, or IINA, it targets the active video. If no media player is focused, it falls back to controlling your background music player.
 
 ---
 
