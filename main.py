@@ -59,7 +59,7 @@ def main():
     options = vision.HandLandmarkerOptions(
         base_options=base_options,
         running_mode=vision.RunningMode.IMAGE,
-        num_hands=1
+        num_hands=2
     )
     detector = vision.HandLandmarker.create_from_options(options)
     

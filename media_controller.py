@@ -297,3 +297,43 @@ def previous_track():
     end tell
     '''
     subprocess.run(["osascript", "-e", applescript])
+
+def quit_active_app():
+    if os_name == "Windows":
+
+        win_key(0x12) # Alt
+        win_key(0x73) # F4
+        return
+    elif os_name == "Linux":
+        subprocess.run(["xdotool", "getactivewindow", "windowkill"])
+        return
+
+    applescript = '''
+    set frontAppPath to (path to frontmost application as text)
+    set AppleScript's text item delimiters to ":"
+    set frontAppName to text item -2 of frontAppPath
+    set AppleScript's text item delimiters to ""
+
+    -- If a media app is in the foreground, quit it
+    if frontAppName contains "Spotify" then
+        tell application "Spotify" to quit
+    else if frontAppName contains "VLC" then
+        tell application "VLC" to quit
+    else if frontAppName contains "Music" then
+        tell application "Music" to quit
+    else if frontAppName contains "IINA" then
+        tell application "IINA" to quit
+    else
+        -- If you are working in another app (like VS Code), hunt down the background media player and kill it
+        tell application "System Events"
+            if (exists process "Spotify") then
+                tell application "Spotify" to quit
+            else if (exists process "VLC") then
+                tell application "VLC" to quit
+            else if (exists process "Music") then
+                tell application "Music" to quit
+            end if
+        end tell
+    end if
+    '''
+    subprocess.run(["osascript", "-e", applescript])
