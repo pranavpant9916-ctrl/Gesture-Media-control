@@ -107,7 +107,37 @@ def main():
         current_time = time.time()
         
         if result.hand_landmarks:
+            if len(result.hand_landmarks) == 2:
+                h1 = result.hand_landmarks[0]
+                h2 = result.hand_landmarks[1]
+
+                h1_tip = h1[12]
+                h1_palm = h1[9]
+                h1_wrist = h1[0]
+
+                h2_tip = h2[12]
+                h2_palm = h2[9]
+                h2_wrist = h2[0]
+
+                dist_tip1_palm2 = calculate_distance(h1_tip, h2_palm)
+                dist_tip2_palm1 = calculate_distance(h2_tip, h1_palm)
+                wrist_dist = calculate_distance(h1_wrist, h2_wrist)
+
+                if (dist_tip1_palm2 < 0.1 or dist_tip2_palm1 < 0.1) and wrist_dist > 0.2:
+                    if current_time - last_gesture_time > 2.0:
+                        # Draw visual warning
+                        h, w = frame.shape[:2]
+                        cv2.putText(frame, "APP CLOSED", (w//2 - 250, h//2),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 0, 255), 3)
+                        cv2.imshow('Camera Feed', frame)
+                        cv2.waitKey(1000) # Pause to show text
+
+                        cmd_queue.put((media.quit_active_app, ()))
+                        last_gesture_time = current_time
+                        continue
+
             for hand_landmarks, handedness in zip(result.hand_landmarks, result.handedness):
+
                 for start_idx, end_idx in CONNECTIONS:
                     start_pt = hand_landmarks[start_idx]
                     end_pt = hand_landmarks[end_idx]
