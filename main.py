@@ -111,21 +111,19 @@ def main():
                 h1 = result.hand_landmarks[0]
                 h2 = result.hand_landmarks[1]
 
-                h1_tip = h1[12]
-                h1_palm = h1[9]
-                h1_wrist = h1[0]
+                h1_tips = [h1[8], h1[12], h1[16]]
+                h2_tips = [h2[8], h2[12], h2[16]]
+                h1_palm, h1_wrist = h1[9], h1[0]
+                h2_palm, h2_wrist = h2[9], h2[0]
 
-                h2_tip = h2[12]
-                h2_palm = h2[9]
-                h2_wrist = h2[0]
+                dist_h1_to_h2 = min([calculate_distance(tip, h2_palm) for tip in h1_tips])
+                dist_h2_to_h1 = min([calculate_distance(tip, h1_palm) for tip in h2_tips])
 
-                dist_tip1_palm2 = calculate_distance(h1_tip, h2_palm)
-                dist_tip2_palm1 = calculate_distance(h2_tip, h1_palm)
                 wrist_dist = calculate_distance(h1_wrist, h2_wrist)
 
-                if (dist_tip1_palm2 < 0.1 or dist_tip2_palm1 < 0.1) and wrist_dist > 0.2:
+                if (dist_h1_to_h2 < 0.20 or dist_h2_to_h1 < 0.20) and wrist_dist > 0.15:
                     if current_time - last_gesture_time > 2.0:
-                        # Draw visual warning
+
                         h, w = frame.shape[:2]
                         cv2.putText(frame, "APP CLOSED", (w//2 - 250, h//2),
                                     cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 0, 255), 3)
