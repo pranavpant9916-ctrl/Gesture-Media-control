@@ -107,32 +107,39 @@ def main():
         current_time = time.time()
         
         if result.hand_landmarks:
+
             if len(result.hand_landmarks) == 2:
                 h1 = result.hand_landmarks[0]
                 h2 = result.hand_landmarks[1]
 
-                h1_tips = [h1[8], h1[12], h1[16]]
-                h2_tips = [h2[8], h2[12], h2[16]]
                 h1_palm, h1_wrist = h1[9], h1[0]
                 h2_palm, h2_wrist = h2[9], h2[0]
+                wrist_dist = calculate_distance(h1_wrist, h2_wrist)
 
+                if wrist_dist < 0.15:
+                    h, w = frame.shape[:2]
+                    cv2.putText(frame, "SHUTTING DOWN...", (w//2 - 150, h//2),
+                                cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 0, 255), 3)
+                    cv2.imshow('Camera Feed', frame)
+                    cv2.waitKey(1000)
+                    break
+
+                h1_tips = [h1[8], h1[12], h1[16]]
+                h2_tips = [h2[8], h2[12], h2[16]]
                 dist_h1_to_h2 = min([calculate_distance(tip, h2_palm) for tip in h1_tips])
                 dist_h2_to_h1 = min([calculate_distance(tip, h1_palm) for tip in h2_tips])
 
-                wrist_dist = calculate_distance(h1_wrist, h2_wrist)
-
                 if (dist_h1_to_h2 < 0.20 or dist_h2_to_h1 < 0.20) and wrist_dist > 0.15:
                     if current_time - last_gesture_time > 2.0:
-
                         h, w = frame.shape[:2]
-                        cv2.putText(frame, "APP CLOSED", (w//2 - 250, h//2),
+                        cv2.putText(frame, "TARGET TERMINATED", (w//2 - 250, h//2),
                                     cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 0, 255), 3)
                         cv2.imshow('Camera Feed', frame)
-                        cv2.waitKey(1000) # Pause to show text
+                        cv2.waitKey(1000)
 
                         cmd_queue.put((media.quit_active_app, ()))
                         last_gesture_time = current_time
-                        continue
+                        continue # Skip individual hand processing for this frame
 
             for hand_landmarks, handedness in zip(result.hand_landmarks, result.handedness):
 
