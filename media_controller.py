@@ -300,40 +300,27 @@ def previous_track():
 
 def quit_active_app():
     if os_name == "Windows":
-
-        win_key(0x12) # Alt
-        win_key(0x73) # F4
+        subprocess.run('taskkill /F /IM Spotify.exe', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run('taskkill /F /IM vlc.exe', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run('taskkill /F /IM chrome.exe', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run('taskkill /F /IM firefox.exe', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run('taskkill /F /IM msedge.exe', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
+
     elif os_name == "Linux":
-        subprocess.run(["xdotool", "getactivewindow", "windowkill"])
+        subprocess.run(["pkill", "-f", "spotify"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-f", "vlc"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-f", "chrome"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-f", "firefox"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
-
     applescript = '''
-    set frontAppPath to (path to frontmost application as text)
-    set AppleScript's text item delimiters to ":"
-    set frontAppName to text item -2 of frontAppPath
-    set AppleScript's text item delimiters to ""
-
-    -- If a media app is in the foreground, quit it
-    if frontAppName contains "Spotify" then
-        tell application "Spotify" to quit
-    else if frontAppName contains "VLC" then
-        tell application "VLC" to quit
-    else if frontAppName contains "Music" then
-        tell application "Music" to quit
-    else if frontAppName contains "IINA" then
-        tell application "IINA" to quit
-    else
-        -- If you are working in another app (like VS Code), hunt down the background media player and kill it
-        tell application "System Events"
-            if (exists process "Spotify") then
-                tell application "Spotify" to quit
-            else if (exists process "VLC") then
-                tell application "VLC" to quit
-            else if (exists process "Music") then
-                tell application "Music" to quit
-            end if
-        end tell
-    end if
+    tell application "System Events"
+        if (exists process "Spotify") then tell application "Spotify" to quit
+        if (exists process "VLC") then tell application "VLC" to quit
+        if (exists process "Music") then tell application "Music" to quit
+        if (exists process "IINA") then tell application "IINA" to quit
+        if (exists process "Google Chrome") then tell application "Google Chrome" to quit
+        if (exists process "Safari") then tell application "Safari" to quit
+    end tell
     '''
     subprocess.run(["osascript", "-e", applescript])

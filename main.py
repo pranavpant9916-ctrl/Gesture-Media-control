@@ -11,7 +11,7 @@ import media_controller as media
 from gesture_classifier import classify_gesture
 from utils import calculate_distance
 
-# Connection lines for rendering the hand skeleton overlay
+
 CONNECTIONS = [
     (0,1),(1,2),(2,3),(3,4),
     (0,5),(5,6),(6,7),(7,8),
@@ -116,7 +116,9 @@ def main():
                 h2_palm, h2_wrist = h2[9], h2[0]
                 wrist_dist = calculate_distance(h1_wrist, h2_wrist)
 
-                if wrist_dist < 0.15:
+                index_dist = calculate_distance(h1[8], h2[8])
+
+                if wrist_dist < 0.25 and index_dist > 0.35:
                     h, w = frame.shape[:2]
                     cv2.putText(frame, "SHUTTING DOWN...", (w//2 - 150, h//2),
                                 cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 0, 255), 3)
@@ -132,8 +134,8 @@ def main():
                 if (dist_h1_to_h2 < 0.20 or dist_h2_to_h1 < 0.20) and wrist_dist > 0.15:
                     if current_time - last_gesture_time > 2.0:
                         h, w = frame.shape[:2]
-                        cv2.putText(frame, "TARGET TERMINATED", (w//2 - 250, h//2),
-                                    cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 0, 255), 3)
+                        cv2.putText(frame, "APP CLOSED", (w//2 - 250, h//2),
+                                    cv2.FONT_HERSHEY_DUPLEX, 1.2, (150, 200, 255), 3)
                         cv2.imshow('Camera Feed', frame)
                         cv2.waitKey(1000)
 
@@ -141,7 +143,7 @@ def main():
                         last_gesture_time = current_time
                         continue # Skip individual hand processing for this frame
 
-            for hand_landmarks, handedness in zip(result.hand_landmarks, result.handedness):
+            for hand_landmarks,handedness in zip(result.hand_landmarks, result.handedness):
 
                 for start_idx, end_idx in CONNECTIONS:
                     start_pt = hand_landmarks[start_idx]
