@@ -100,6 +100,12 @@ def main():
             continue
         
         frame = cv2.flip(frame, 1)
+
+        # Auto-Contrast & Brightness Correction (CLAHE) for low-light environments
+        lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+        lab[:, :, 0] = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(lab[:, :, 0])
+        frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
         h, w, _ = frame.shape
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
@@ -141,7 +147,7 @@ def main():
 
                         cmd_queue.put((media.quit_active_app, ()))
                         last_gesture_time = current_time
-                        continue # Skip individual hand processing for this frame
+                        continue
 
             for hand_landmarks,handedness in zip(result.hand_landmarks, result.handedness):
 
