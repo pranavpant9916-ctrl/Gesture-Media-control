@@ -11,6 +11,7 @@ import media_controller as media
 from gesture_classifier import classify_gesture
 from utils import calculate_distance
 import ui_renderer
+import gesture_maths
 
 CONNECTIONS = [
     (0,1),(1,2),(2,3),(3,4),
@@ -117,34 +118,22 @@ def main():
             if len(result.hand_landmarks) == 2:
                 h1 = result.hand_landmarks[0]
                 h2 = result.hand_landmarks[1]
+                detected_gesture = gesture_maths.two_hand_gesture(h1, h2)
 
-                h1_palm, h1_wrist = h1[9], h1[0]
-                h2_palm, h2_wrist = h2[9], h2[0]
-                wrist_dist = calculate_distance(h1_wrist, h2_wrist)
-
-                index_dist = calculate_distance(h1[8], h2[8])
-
-                if wrist_dist < 0.25 and index_dist > 0.35:
+                if detected_gesture == "X_SHAPE":
                     h, w = frame.shape[:2]
                     cv2.putText(frame, "SHUTTING DOWN...", (w//2 - 150, h//2),
                                 cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 0, 255), 3)
                     cv2.imshow('Camera Feed', frame)
                     cv2.waitKey(1000)
                     break
-
-                h1_tips = [h1[8], h1[12], h1[16]]
-                h2_tips = [h2[8], h2[12], h2[16]]
-                dist_h1_to_h2 = min([calculate_distance(tip, h2_palm) for tip in h1_tips])
-                dist_h2_to_h1 = min([calculate_distance(tip, h1_palm) for tip in h2_tips])
-
-                if (dist_h1_to_h2 < 0.20 or dist_h2_to_h1 < 0.20) and wrist_dist > 0.15:
+                elif detected_gesture == "T_SHAPE":
                     if current_time - last_gesture_time > 2.0:
                         h, w = frame.shape[:2]
                         cv2.putText(frame, "APP CLOSED", (w//2 - 250, h//2),
                                     cv2.FONT_HERSHEY_DUPLEX, 1.2, (150, 200, 255), 3)
                         cv2.imshow('Camera Feed', frame)
                         cv2.waitKey(1000)
-
                         cmd_queue.put((media.quit_active_app, ()))
                         last_gesture_time = current_time
                         continue
