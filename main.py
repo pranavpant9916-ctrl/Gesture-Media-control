@@ -35,7 +35,15 @@ class WebcamStream:
 
     def update(self):
         while not self.stopped:
-            self.grabbed, self.frame = self.stream.read()
+            try:
+                self.grabbed, self.frame = self.stream.read()
+
+                if not self.grabbed:
+                    time.sleep(0.01)
+            except Exception as e:
+                print(f"[FATAL ERROR] Camera thread crashed: {e}")
+                self.stopped = True
+                break
 
     def read(self):
         return self.grabbed, self.frame
@@ -97,8 +105,9 @@ def main():
     
     while True:
         ret, frame = cap.read()
-        if not ret:
-            continue
+        if not ret or frame is None:
+            print("Error: Could not read frame from Camera.")
+            break
         
         frame = cv2.flip(frame, 1)
 
